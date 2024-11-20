@@ -24,3 +24,6 @@ GOOS=linux GOARCH=amd64 go build -o bootstrap summary.go
 zip function.zip bootstrap
 ```
 
+### 注意点
+
+字幕がエラーとなる場合は、それはライブストリーム配信の予定。
