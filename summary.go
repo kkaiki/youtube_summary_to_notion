@@ -1,8 +1,8 @@
 package main
 
 import (
+	"io"
     "context"
-    "encoding/json"
     "fmt"
     "log"
     "os"
@@ -65,7 +65,8 @@ func main() {
     // チャンネルIDのリスト
     channelIDs := []string{
         "UCagAVZFPcLh9UMDidIUfXKQ", // MBチャンネル
-		
+		"UCjS669h-WcKvE_k6_UKC4Zw", // 学長
+        "UCg7Q9uMbnEOmgmZCzxB0FJQ", // ホリエモン
     }
 
     // チャンネルごとの処理
@@ -169,8 +170,17 @@ func getCaptions(service *youtube.Service, videoID string) ([]CaptionInfo, error
 
     var captions []CaptionInfo
     for _, caption := range captionResponse.Items {
+        // 字幕テキストを取得
+		resp, err := service.Captions.Download(caption.Id).Download()
+		if err != nil {
+			log.Printf("Error downloading caption: %v", err)
+			continue
+		}
+		captionTrack, err := io.ReadAll(resp.Body)
+		defer resp.Body.Close()
         captionInfo := CaptionInfo{
             Language:    caption.Snippet.Language,
+            Text:        string(captionTrack),
             IsAutomatic: strings.Contains(caption.Snippet.TrackKind, "ASR"),
         }
         captions = append(captions, captionInfo)
@@ -210,13 +220,58 @@ func saveToNotionWithRetry(client *notionapi.Client, databaseID string, video Vi
     return fmt.Errorf("failed after %d retries: %v", maxRetries, lastErr)
 }
 
+
 func saveToNotion(client *notionapi.Client, databaseID string, video VideoInfo) error {
-    // 説明文を制限
     description := truncateDescription(video.Description)
-    
-    captionsJSON, err := json.Marshal(video.Captions)
-    if err != nil {
-        return fmt.Errorf("error marshaling captions: %v", err)
+
+    // ブロックの作成
+    blocks := []notionapi.Block{
+        {
+            Object:  "block",
+            Type:    notionapi.BlockTypeParagraph,
+            Paragraph: &notionapi.Paragraph{
+                RichText: []notionapi.RichText{
+                    {
+                        Type: "text",
+                        Text: &notionapi.Text{
+                            Content: description,
+                        },
+                    },
+                },
+            },
+        },
+        {
+            Object:  "block",
+            Type:    notionapi.BlockTypeHeading2,
+            Heading2: &notionapi.Heading{
+                RichText: []notionapi.RichText{
+                    {
+                        Type: "text",
+                        Text: &notionapi.Text{
+                            Content: "字幕",
+                        },
+                    },
+                },
+            },
+        },
+    }
+
+    // 字幕ブロックの追加
+    for _, caption := range video.Captions {
+        blocks = append(blocks, notionapi.Block{
+            Object:  "block",
+            Type:    notionapi.BlockTypeParagraph,
+            Paragraph: &notionapi.Paragraph{
+                RichText: []notionapi.RichText{
+                    {
+                        Type: "text",
+                        Text: &notionapi.Text{
+                            Content: fmt.Sprintf("言語: %s\n%s", caption.Language, caption.Text),
+                        },
+                    },
+                },
+            },
+        })
     }
 
     params := &notionapi.PageCreateRequest{
@@ -234,15 +289,6 @@ func saveToNotion(client *notionapi.Client, databaseID string, video VideoInfo) 
                     },
                 },
             },
-            "Description": notionapi.RichTextProperty{
-                RichText: []notionapi.RichText{
-                    {
-                        Text: &notionapi.Text{
-                            Content: description,
-                        },
-                    },
-                },
-            },
             "URL": notionapi.URLProperty{
                 URL: video.URL,
             },
@@ -253,18 +299,10 @@ func saveToNotion(client *notionapi.Client, databaseID string, video VideoInfo) 
                     },
                 },
             },
-            "Captions": notionapi.RichTextProperty{
-                RichText: []notionapi.RichText{
-                    {
-                        Text: &notionapi.Text{
-                            Content: string(captionsJSON),
-                        },
-                    },
-                },
-            },
         },
+        Children: blocks,
     }
 
-    _, err = client.Page.Create(context.Background(), params)
+    _, err := client.Page.Create(context.Background(), params)
     return err
 }
