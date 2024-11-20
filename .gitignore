@@ -1,3 +1,6 @@
 .env
 client_secret.json
 service-account.json
+youtube
+.pytest_cache
+python

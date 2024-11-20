@@ -4,3 +4,4 @@ pytz
 youtube-transcript-api
 groq
 python-dotenv
+isodate
