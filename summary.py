@@ -11,9 +11,11 @@ from notion_client import Client
 import threading
 from queue import Queue
 from youtube_transcript_api import YouTubeTranscriptApi
+from groq import Groq
+from dotenv import load_dotenv
 
 # 定数
-MAX_DESCRIPTION_LENGTH = 1000
+MAX_DESCRIPTION_LENGTH = 1500
 YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.readonly",
     "https://www.googleapis.com/auth/youtube.force-ssl"
@@ -32,16 +34,59 @@ def lambda_handler(event, context):
             'body': json.dumps(str(e))
         }
 
+# Groqクライアントの初期化
 class VideoInfo:
     def __init__(self, video_id: str, title: str, description: str, published_at: datetime, 
-                 channel_title: str, url: str, captions: List[Dict] = None):
+                 channel_title: str, url: str, caption_summary: str = None):
         self.video_id = video_id
         self.title = title
         self.description = description
         self.published_at = published_at
         self.channel_title = channel_title
         self.url = url
-        self.captions = captions or []
+        self.caption_summary = caption_summary
+
+# Groqクライアントの初期化
+def get_groq_client():
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise ValueError("GROQ_API_KEY environment variable is not set")
+    return Groq(api_key=api_key)
+
+# 字幕要約関数
+def summarize_caption(groq_client, caption_text: str, language: str) -> str:
+    try:
+        prompt = f"""
+        以下の字幕テキストを要約してください。重要なポイントを箇条書きで3-5つにまとめてください。
+        
+        字幕テキスト:
+        {caption_text}
+        """
+        
+        if language == "en":
+            prompt = f"""
+            Please summarize the following caption text. List 3-5 key points in bullet points.
+            
+            Caption text:
+            {caption_text}
+            """
+        
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            model="llama3-8b-8192",
+        )
+        
+        return chat_completion.choices[0].message.content
+    
+    except Exception as e:
+        logging.error(f"字幕要約エラー: {e}")
+        return ""
+
 
 class CaptionInfo:
     def __init__(self, language: str, text: str, is_automatic: bool):
@@ -227,7 +272,6 @@ def split_text(text: str, max_length: int = 2000) -> List[str]:
     return result
 
 def save_to_notion(notion_client, database_id: str, video: VideoInfo):
-    """Notionにデータを保存"""
     try:
         # 重複チェック
         results = notion_client.databases.query(
@@ -247,7 +291,7 @@ def save_to_notion(notion_client, database_id: str, video: VideoInfo):
         # 説明文を分割
         description_parts = split_text(video.description)
         blocks = []
-        
+
         # 説明文ブロックの追加
         for part in description_parts:
             blocks.append({
@@ -258,39 +302,23 @@ def save_to_notion(notion_client, database_id: str, video: VideoInfo):
                 }
             })
 
-        # 字幕見出しの追加
-        blocks.append({
-            "object": "block",
-            "type": "heading_2",
-            "heading_2": {
-                "rich_text": [{"type": "text", "text": {"content": "字幕"}}]
-            }
-        })
+        # 字幕要約の追加
+        if video.caption_summary:
+            blocks.append({
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [{"type": "text", "text": {"content": "字幕要約"}}]
+                }
+            })
 
-        # 字幕ブロックの追加
-        for caption in video.captions:
-            # 言語情報の追加
             blocks.append({
                 "object": "block",
                 "type": "paragraph",
                 "paragraph": {
-                    "rich_text": [{
-                        "type": "text",
-                        "text": {"content": f"言語: {caption.language}"}
-                    }]
+                    "rich_text": [{"type": "text", "text": {"content": video.caption_summary}}]
                 }
             })
-            
-            # 字幕テキストを分割して追加
-            caption_parts = split_text(caption.text)
-            for part in caption_parts:
-                blocks.append({
-                    "object": "block",
-                    "type": "paragraph",
-                    "paragraph": {
-                        "rich_text": [{"type": "text", "text": {"content": part}}]
-                    }
-                })
 
         notion_client.pages.create(
             parent={"database_id": database_id},
@@ -307,22 +335,149 @@ def save_to_notion(notion_client, database_id: str, video: VideoInfo):
             },
             children=blocks
         )
-
     except Exception as e:
         logging.error(f"Notion保存エラー: {e}")
         raise
 
-def process_channel(youtube_service, notion_client, channel_id: str, database_id: str):
-    """チャンネルの処理"""
+def chunk_text(text: str, chunk_size: int = 500) -> List[str]:
+    """テキストを指定された文字数で分割"""
+    chunks = []
+    current_chunk = ""
+    current_length = 0
+    
+    # 文章を句点で分割
+    sentences = text.split('。')
+    
+    for sentence in sentences:
+        if not sentence.strip():
+            continue
+            
+        sentence = sentence + '。'
+        sentence_length = len(sentence)
+        
+        if current_length + sentence_length > chunk_size:
+            if current_chunk:
+                chunks.append(current_chunk)
+            current_chunk = sentence
+            current_length = sentence_length
+        else:
+            current_chunk += sentence
+            current_length += sentence_length
+    
+    if current_chunk:
+        chunks.append(current_chunk)
+    
+    return chunks
+
+def summarize_long_caption(groq_client, caption_text: str, language: str = "ja") -> str:
+    """長い字幕テキストを分割して要約"""
+    # チャンクに分割
+    chunks = chunk_text(caption_text, chunk_size=500)
+    logging.info(f"字幕を {len(chunks)} 個のチャンク(各500文字)に分割しました")
+    summaries = []
+    
+    # 各チャンクの要約用プロンプト
+    chunk_prompt_template = """
+    以下の字幕テキスト(500文字程度)を要約してください。
+    できるだけ具体的に、以下の形式で出力してください：
+
+    【区間の要点】
+    • この部分で話された重要な内容を2-3点で箇条書き
+    
+    【キーワード】
+    • この部分で出てきた重要な用語や概念を2-3個
+    
+    字幕テキスト:
+    {chunk}
+    """
+    
+    # 各チャンクを要約
+    for i, chunk in enumerate(chunks, 1):
+        try:
+            logging.info(f"チャンク {i}/{len(chunks)} (約500文字) を要約中...")
+            
+            chat_completion = groq_client.chat.completions.create(
+                messages=[{
+                    "role": "user",
+                    "content": chunk_prompt_template.format(chunk=chunk)
+                }],
+                model="mixtral-8x7b-32768",
+                temperature=0.3  # より正確な要約のため
+            )
+            
+            summary = chat_completion.choices[0].message.content
+            summaries.append(f"=== チャンク {i}/{len(chunks)} の要約 ===\n{summary}")
+            logging.info(f"チャンク {i} の要約が完了")
+            
+            time.sleep(2)  # API制限対策、余裕を持たせる
+            
+        except Exception as e:
+            logging.error(f"チャンク {i} の要約中にエラー: {e}")
+            summaries.append(f"=== チャンク {i} の要約に失敗 ===")
+    
+    # 最終要約用プロンプト
+    final_prompt = """
+    以下の各チャンク(約500文字ごと)の要約を統合して、動画全体の内容をまとめてください：
+
+    【動画全体の概要】
+    • 全体を通して話された主要なテーマや結論
+
+    【重要ポイント】
+    • 各チャンクから抽出された重要な点を統合して3-5点に
+
+    【キーワード一覧】
+    • 動画全体で重要な用語や概念を最大5つ
+
+    要約群:
+    {summaries}
+    """.format(summaries="\n\n".join(summaries))
+    
     try:
+        logging.info("全チャンクの要約を統合中...")
+        final_completion = groq_client.chat.completions.create(
+            messages=[{
+                "role": "user",
+                "content": final_prompt
+            }],
+            model="mixtral-8x7b-32768",
+            temperature=0.3
+        )
+        
+        return final_completion.choices[0].message.content
+        
+    except Exception as e:
+        logging.error(f"最終要約エラー: {e}")
+        return "=== 各チャンクの要約 ===\n\n" + "\n\n".join(summaries)
+
+# process_channel関数内の字幕要約部分を修正
+def process_channel(youtube_service, notion_client, groq_client, channel_id: str, database_id: str):
+    try:
+        logging.info(f"チャンネル {channel_id} の処理を開始")
         videos = get_latest_videos(youtube_service, channel_id)
+        
         for video in videos:
-            # get_captionsの呼び出しを修正
-            video.captions = get_captions(video.video_id)  # youtube_serviceを渡さない
+            logging.info(f"動画 {video.title} の処理を開始")
+            captions = get_captions(video.video_id)
+            
+            if captions:
+                first_caption = captions[0]
+                logging.info("字幕の要約を開始")
+                video.caption_summary = summarize_long_caption(
+                    groq_client,
+                    first_caption.text
+                )
+                logging.info("字幕の要約が完了")
+
             save_to_notion(notion_client, database_id, video)
+            logging.info(f"動画 {video.title} の処理が完了")
+            
     except Exception as e:
         logging.error(f"チャンネル処理エラー: {e}")
+
 def main():
+    # .envファイルから環境変数を読み込む
+    load_dotenv()
+
     # ログ設定
     logging.basicConfig(
         level=logging.INFO,
@@ -332,13 +487,15 @@ def main():
     # 環境変数の取得
     notion_api_key = os.getenv("NOTION_API_KEY")
     notion_database_id = os.getenv("NOTION_DATABASE_ID")
+    groq_api_key = os.getenv("GROQ_API_KEY")
 
-    if not all([notion_api_key, notion_database_id]):
+    if not all([notion_api_key, notion_database_id, groq_api_key]):
         raise ValueError("Required environment variables are not set")
 
     # クライアントの初期化
     youtube_service = get_service_account_client()
     notion_client = Client(auth=notion_api_key)
+    groq_client = get_groq_client()
 
     # チャンネルIDのリスト
     channel_ids = [
@@ -349,7 +506,7 @@ def main():
 
     # チャンネルごとの処理
     for channel_id in channel_ids:
-        process_channel(youtube_service, notion_client, channel_id, notion_database_id)
+        process_channel(youtube_service, notion_client, groq_client, channel_id, notion_database_id)
 
 if __name__ == "__main__":
     main()

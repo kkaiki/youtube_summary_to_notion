@@ -2,3 +2,5 @@ google-api-python-client
 notion-client
 pytz
 youtube-transcript-api
+groq
+python-dotenv
