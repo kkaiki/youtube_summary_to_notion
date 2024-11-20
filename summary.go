@@ -65,8 +65,8 @@ func main() {
     // チャンネルIDのリスト
     channelIDs := []string{
         "UCagAVZFPcLh9UMDidIUfXKQ", // MBチャンネル
-		"UCjS669h-WcKvE_k6_UKC4Zw", // 学長
-        "UCg7Q9uMbnEOmgmZCzxB0FJQ", // ホリエモン
+		"UC67Wr_9pA4I0glIxDt_Cpyw", // 学長
+        "UCZe1kwe4OZwhgdISn9lYTng", // ホリエモン
     }
 
     // チャンネルごとの処理
@@ -224,56 +224,63 @@ func saveToNotionWithRetry(client *notionapi.Client, databaseID string, video Vi
 func saveToNotion(client *notionapi.Client, databaseID string, video VideoInfo) error {
     description := truncateDescription(video.Description)
 
-    // ブロックの作成
-    blocks := []notionapi.Block{
-        {
-            Object:  "block",
-            Type:    notionapi.BlockTypeParagraph,
-            Paragraph: &notionapi.Paragraph{
-                RichText: []notionapi.RichText{
-                    {
-                        Type: "text",
-                        Text: &notionapi.Text{
-                            Content: description,
-                        },
-                    },
-                },
-            },
-        },
-        {
-            Object:  "block",
-            Type:    notionapi.BlockTypeHeading2,
-            Heading2: &notionapi.Heading{
-                RichText: []notionapi.RichText{
-                    {
-                        Type: "text",
-                        Text: &notionapi.Text{
-                            Content: "字幕",
-                        },
-                    },
-                },
-            },
-        },
-    }
+	// ブロックの作成
+	blocks := []notionapi.Block{
+		&notionapi.ParagraphBlock{
+			BasicBlock: notionapi.BasicBlock{
+				Object: "block",
+				Type:   notionapi.BlockTypeParagraph,
+			},
+			Paragraph: notionapi.Paragraph{
+				RichText: []notionapi.RichText{
+					{
+						Type: "text",
+						Text: &notionapi.Text{
+							Content: description,
+						},
+					},
+				},
+			},
+		},
+		&notionapi.Heading2Block{
+			BasicBlock: notionapi.BasicBlock{
+				Object: "block",
+				Type:   notionapi.BlockTypeHeading2,
+			},
+			Heading2: notionapi.Heading{
+				RichText: []notionapi.RichText{
+					{
+						Type: "text",
+						Text: &notionapi.Text{
+							Content: "字幕",
+						},
+					},
+				},
+			},
+		},
+	}
 
-    // 字幕ブロックの追加
-    for _, caption := range video.Captions {
-        blocks = append(blocks, notionapi.Block{
-            Object:  "block",
-            Type:    notionapi.BlockTypeParagraph,
-            Paragraph: &notionapi.Paragraph{
-                RichText: []notionapi.RichText{
-                    {
-                        Type: "text",
-                        Text: &notionapi.Text{
-                            Content: fmt.Sprintf("言語: %s\n%s", caption.Language, caption.Text),
-                        },
-                    },
-                },
-            },
-        })
-    }
-
+	// 字幕ブロックの追加
+	for _, caption := range video.Captions {
+		blocks = append(blocks, &notionapi.ParagraphBlock{
+			BasicBlock: notionapi.BasicBlock{
+				Object: "block",
+				Type:   notionapi.BlockTypeParagraph,
+			},
+			Paragraph: notionapi.Paragraph{
+				RichText: []notionapi.RichText{
+					{
+						Type: "text",
+						Text: &notionapi.Text{
+							Content: fmt.Sprintf("言語: %s\n%s", caption.Language, caption.Text),
+						},
+					},
+				},
+			},
+		})
+	}
+	
+	
     params := &notionapi.PageCreateRequest{
         Parent: notionapi.Parent{
             Type:       notionapi.ParentTypeDatabaseID,
