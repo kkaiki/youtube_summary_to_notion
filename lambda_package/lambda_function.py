@@ -20,20 +20,26 @@ YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.readonly",
     "https://www.googleapis.com/auth/youtube.force-ssl"
 ]
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SERVICE_ACCOUNT_FILE = os.path.join(SCRIPT_DIR, "service-account.json")
 
 def lambda_handler(event, context):
     try:
-        main()
+        result = main()  # main()の実行結果を取得
         return {
             'statusCode': 200,
-            'body': json.dumps('Success')
+            'body': json.dumps({
+                'message': 'Success',
+                'result': result
+            })
         }
     except Exception as e:
         return {
             'statusCode': 500,
-            'body': json.dumps(str(e))
+            'body': json.dumps({
+                'error': str(e)
+            })
         }
-
 # Groqクライアントの初期化
 class VideoInfo:
     def __init__(self, video_id: str, title: str, description: str, published_at: datetime, 
@@ -69,7 +75,7 @@ def get_service_account_client():
     """サービスアカウント認証クライアントの取得"""
     try:
         credentials = service_account.Credentials.from_service_account_file(
-            'service-account.json',
+            SERVICE_ACCOUNT_FILE,
             scopes=YOUTUBE_SCOPES
         )
         return build('youtube', 'v3', credentials=credentials)

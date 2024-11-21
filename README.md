@@ -36,12 +36,13 @@ zip function.zip bootstrap
 ## lambda化
 
 1. 必要なパッケージをインストール
+lambda_packageディレクトリ内で
 ```bash
-pip install -r requirements.txt --target ./python
+rm -rf python
+pip install -r ../requirements.txt --target ./python
 ```
 
 2. **ZIPファイルの作成**
 ```bash
-# lambda_packageディレクトリ内で
 zip -r ../lambda_deployment.zip .
 ```
