@@ -1,3 +1,4 @@
+import re
 import os
 import time
 import json
@@ -212,58 +213,31 @@ def get_latest_videos(youtube_service, channel_id: str) -> List[VideoInfo]:
         raise
 
 def split_text(text: str, max_length: int = 2000) -> List[str]:
-    """
-    テキストを指定された最大長で分割する
-    - 文章の途中で分割されないように、文末で区切る
-    - 改行や句点で区切られた段落を考慮する
-    - 長すぎる文章は強制的に分割する
-    """
+    """テキストを改行で区切り、URLをリンク化して分割する"""
     if not text:
         return []
     
+    # URLを検出する正規表現
+    url_pattern = r'https?://[\w/:%#\$&\?\(\)~\.=\+\-]+'
+    
+    # 改行で分割
+    paragraphs = text.split('\n')
     result = []
     current_chunk = ""
     
-    # 改行で段落に分割
-    paragraphs = text.split('\n')
-    
     for paragraph in paragraphs:
-        if not paragraph.strip():
-            continue
-            
-        # 文章を句点で分割
-        sentences = paragraph.split('。')
+        if len(current_chunk + paragraph + "\n") > max_length:
+            if current_chunk:
+                result.append(current_chunk)
+                current_chunk = ""
         
-        for sentence in sentences:
-            if not sentence.strip():
-                continue
-                
-            # 文が非常に長い場合は強制的に分割
-            if len(sentence) > max_length:
-                # 現在のチャンクがある場合は追加
-                if current_chunk:
-                    result.append(current_chunk)
-                    current_chunk = ""
-                
-                # 長い文を強制的に分割
-                for i in range(0, len(sentence), max_length):
-                    chunk = sentence[i:i + max_length]
-                    result.append(chunk)
-                continue
-            
-            # 通常の文処理
-            sentence_with_period = sentence + ('。' if sentence != sentences[-1] else '')
-            
-            # 現在のチャンクに追加可能か確認
-            if len(current_chunk + sentence_with_period) <= max_length:
-                current_chunk += sentence_with_period
-            else:
-                # 現在のチャンクを結果に追加
-                if current_chunk:
-                    result.append(current_chunk)
-                current_chunk = sentence_with_period
+        # 空のパラグラフの場合は改行のみ追加
+        if not paragraph.strip():
+            current_chunk += "\n"
+            continue
+        
+        current_chunk += paragraph + "\n"
     
-    # 最後のチャンクを追加
     if current_chunk:
         result.append(current_chunk)
     
@@ -286,18 +260,73 @@ def save_to_notion(notion_client, database_id: str, video: VideoInfo):
             logging.info(f"スキップ: 動画 {video.video_id} は既にNotionに存在します")
             return
 
-        blocks = []
+        blocks = [
+            {
+                "object": "block",
+                "type": "toggle",
+                "toggle": {
+                    "rich_text": [{
+                        "type": "text",
+                        "text": {"content": "概要欄"}
+                    }],
+                    "children": []
+                }
+            }
+        ]
 
-        # 説明文を分割して各ブロックに追加
-        description_parts = split_text(video.description)
-        for part in description_parts:
-            blocks.append({
+        # 説明文を行ごとに分割
+        description_lines = video.description.split('\n')
+        description_blocks = []
+
+        for line in description_lines:
+            rich_text = []
+            
+            # 空行の場合も1つのブロックとして追加
+            if not line.strip():
+                description_blocks.append({
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {
+                        "rich_text": [{
+                            "type": "text",
+                            "text": {"content": ""}
+                        }]
+                    }
+                })
+                continue
+            
+            # テキストをURLとそれ以外に分割
+            url_pattern = r'https?://[\w/:%#\$&\?\(\)~\.=\+\-]+'
+            parts = re.split(url_pattern, line)
+            urls = re.findall(url_pattern, line)
+            
+            # テキストとURLを交互に追加
+            for i, text_part in enumerate(parts):
+                if text_part:
+                    rich_text.append({
+                        "type": "text",
+                        "text": {"content": text_part}
+                    })
+                if i < len(urls):
+                    rich_text.append({
+                        "type": "text",
+                        "text": {
+                            "content": urls[i],
+                            "link": {"url": urls[i]}
+                        }
+                    })
+            
+            # 各行を個別のブロックとして追加
+            description_blocks.append({
                 "object": "block",
                 "type": "paragraph",
                 "paragraph": {
-                    "rich_text": [{"type": "text", "text": {"content": part}}]
+                    "rich_text": rich_text
                 }
             })
+
+        # トグルブロックの中に説明文ブロックを追加
+        blocks[0]["toggle"]["children"] = description_blocks
 
         if video.caption_summary:
             blocks.append({
