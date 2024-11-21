@@ -44,5 +44,5 @@ pip install -r ../requirements.txt --target ./python
 
 2. **ZIPファイルの作成**
 ```bash
-zip -r ../lambda_deployment.zip .
+zip -r ../function.zip .
 ```

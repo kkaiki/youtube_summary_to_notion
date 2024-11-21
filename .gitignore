@@ -4,3 +4,4 @@ service-account.json
 youtube
 .pytest_cache
 python
+*zip
