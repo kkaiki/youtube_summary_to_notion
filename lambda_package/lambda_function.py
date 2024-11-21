@@ -43,14 +43,15 @@ def lambda_handler(event, context):
 # Groqクライアントの初期化
 class VideoInfo:
     def __init__(self, video_id: str, title: str, description: str, published_at: datetime, 
-                 channel_title: str, url: str, caption_summary: str = None):
+                 channel_title: str, url: str, thumbnail_url: str, caption_summary: str = None):
         self.video_id = video_id
         self.title = title
         self.description = description
         self.published_at = published_at
         self.channel_title = channel_title
         self.url = url
-        self.caption_summary = caption_summary
+        self.thumbnail_url = thumbnail_url
+        self.caption_summary = caption_summary  # caption_ から caption_summary に修正
 
 # Groqクライアントの初期化
 def get_groq_client():
@@ -199,7 +200,8 @@ def get_latest_videos(youtube_service, channel_id: str) -> List[VideoInfo]:
                     description=truncate_description(snippet['description']),
                     published_at=published_at,
                     channel_title=snippet['channelTitle'],
-                    url=f"https://www.youtube.com/watch?v={video_id}"
+                    url=f"https://www.youtube.com/watch?v={video_id}",
+                    thumbnail_url=snippet['thumbnails']['maxres']['url'] if 'maxres' in snippet['thumbnails'] else snippet['thumbnails']['high']['url']
                 )
                 videos.append(video)
 
@@ -331,7 +333,20 @@ def save_to_notion(notion_client, database_id: str, video: VideoInfo):
                     "url": video.url
                 },
                 "Channel": {
-                    "multi_select": [{"name": video.channel_title}]
+                    "select": {
+                        "name": video.channel_title
+                    }
+                },
+                "PublishedAt": {
+                    "date": {
+                        "start": video.published_at.isoformat()
+                    }
+                }
+            },
+            cover={
+                "type": "external",
+                "external": {
+                    "url": video.thumbnail_url
                 }
             },
             children=blocks
