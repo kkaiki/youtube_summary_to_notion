@@ -1,0 +1,74 @@
+#!/var/lang/bin/python3.9
+# bootstrap
+import os
+import json
+import logging
+import traceback
+from datetime import datetime
+from lambda_function import lambda_handler
+
+def setup_logging():
+    """ログ設定の初期化"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+def handle_request(event):
+    """リクエストの処理"""
+    try:
+        start_time = datetime.now()
+        logging.info(f"リクエスト開始: {json.dumps(event)}")
+        
+        response = lambda_handler(event, None)
+        
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        logging.info(f"処理完了 (所要時間: {duration:.2f}秒)")
+        
+        return response
+        
+    except Exception as e:
+        logging.error(f"エラー発生: {str(e)}")
+        logging.error(f"トレースバック: {traceback.format_exc()}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            })
+        }
+
+def main():
+    """メイン処理"""
+    setup_logging()
+    logging.info("Lambda function bootstrap starting")
+    
+    while True:
+        try:
+            event = json.loads(input())
+            response = handle_request(event)
+            print(json.dumps(response))
+            
+        except EOFError:
+            logging.info("Lambda function bootstrap ending")
+            break
+            
+        except json.JSONDecodeError as e:
+            logging.error(f"Invalid JSON input: {str(e)}")
+            print(json.dumps({
+                'statusCode': 400,
+                'body': json.dumps({'error': 'Invalid JSON input'})
+            }))
+            
+        except Exception as e:
+            logging.error(f"Unexpected error: {str(e)}")
+            logging.error(f"Traceback: {traceback.format_exc()}")
+            print(json.dumps({
+                'statusCode': 500,
+                'body': json.dumps({'error': 'Internal server error'})
+            }))
+
+if __name__ == '__main__':
+    main()
