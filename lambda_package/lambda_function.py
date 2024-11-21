@@ -433,11 +433,27 @@ def summarize_long_caption(groq_client, caption_text: str, language: str = "ja")
 # process_channel関数内の字幕要約部分を修正
 def process_channel(youtube_service, notion_client, groq_client, channel_id: str, database_id: str):
     try:
+        # 最新の動画を取得
         videos = get_latest_videos(youtube_service, channel_id)
         
         for video in videos:
+            # 重複チェック
+            results = notion_client.databases.query(
+                database_id=database_id,
+                filter={
+                    "property": "URL",
+                    "rich_text": {
+                        "contains": video.video_id
+                    }
+                }
+            )
+
+            if results['results']:
+                logging.info(f"スキップ: 動画 {video.video_id} は既にNotionに存在します")
+                continue
+
+            # 字幕の取得と要約処理
             captions = get_captions(video.video_id)
-            
             if captions:
                 first_caption = captions[0]
                 video.caption_summary = summarize_long_caption(
@@ -445,6 +461,7 @@ def process_channel(youtube_service, notion_client, groq_client, channel_id: str
                     first_caption.text
                 )
 
+            # Notionへの保存
             save_to_notion(notion_client, database_id, video)
             
     except Exception as e:
