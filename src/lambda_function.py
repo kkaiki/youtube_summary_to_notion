@@ -61,25 +61,20 @@ def get_japanese_caption(video_id, max_retries=5, wait_seconds=60):
     except ImportError:
         from youtube_transcript_api._errors import RequestBlocked
         IPBlocked = RequestBlocked  # ダミーで同じものを使う
-    retries = 0
-    while retries < max_retries:
-        try:
-            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['ja'])
-            texts = [item['text'] for item in transcript]
-            print(f"[DEBUG] Number of caption lines: {len(texts)}")
-            return "\n".join(texts)
-        except (TranscriptsDisabled, NoTranscriptFound) as e:
-            print(f"[DEBUG] No Japanese caption found for video_id={video_id}: {e}")
-            return None
-        except (RequestBlocked, IPBlocked) as e:
-            retries += 1
-            print(f"[WARN] Request blocked for video_id={video_id}. Retrying in {wait_seconds} seconds... (retry {retries}/{max_retries})")
-            time.sleep(wait_seconds)
-        except Exception as e:
-            print(f"[ERROR] Exception in get_japanese_caption: {e}")
-            return None
-    print(f"[ERROR] Failed to retrieve caption for video_id={video_id} after {max_retries} retries due to IP block.")
-    return None
+    try:
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['ja'])
+        texts = [item['text'] for item in transcript]
+        print(f"[DEBUG] Number of caption lines: {len(texts)}")
+        return "\n".join(texts)
+    except (TranscriptsDisabled, NoTranscriptFound) as e:
+        print(f"[DEBUG] No Japanese caption found for video_id={video_id}: {e}")
+        return None
+    except (RequestBlocked, IPBlocked) as e:
+        print(f"[ERROR] IP block detected for video_id={video_id}: {e}. Aborting without retry.")
+        return None
+    except Exception as e:
+        print(f"[ERROR] Exception in get_japanese_caption: {e}")
+        return None
 
 def summarize_with_gemini(api_key, caption, title, description):
     print(f"[DEBUG] summarize_with_gemini: title={title}, description={description[:30]}... (truncated)")
