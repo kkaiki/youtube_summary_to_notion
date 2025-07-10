@@ -122,10 +122,24 @@ def save_to_notion(notion_token, database_id, video_info, summary):
 
 def lambda_handler(event, context):
     try:
-        notion_token = os.environ["NOTION_TOKEN"]
-        database_id = os.environ["NOTION_DATABASE_ID"]
-        gemini_api_key = os.environ["GEMINI_API_KEY"]
-        youtube_api_key = os.environ["YOUTUBE_API_KEY"]
+        notion_token = os.environ.get("NOTION_TOKEN")
+        database_id = os.environ.get("NOTION_DATABASE_ID")
+        gemini_api_key = os.environ.get("GEMINI_API_KEY")
+        youtube_api_key = os.environ.get("YOUTUBE_API_KEY")
+
+        # APIキーの存在チェック
+        if not notion_token:
+            print("[ERROR] NOTION_TOKEN is not set.")
+            return {"status": "error", "error": "NOTION_TOKEN is not set."}
+        if not database_id:
+            print("[ERROR] NOTION_DATABASE_ID is not set.")
+            return {"status": "error", "error": "NOTION_DATABASE_ID is not set."}
+        if not gemini_api_key:
+            print("[ERROR] GEMINI_API_KEY is not set.")
+            return {"status": "error", "error": "GEMINI_API_KEY is not set."}
+        if not youtube_api_key:
+            print("[ERROR] YOUTUBE_API_KEY is not set.")
+            return {"status": "error", "error": "YOUTUBE_API_KEY is not set."}
 
         channel_ids = [
             "UCagAVZFPcLh9UMDidIUfXKQ", # MBチャンネル
