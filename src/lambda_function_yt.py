@@ -136,7 +136,7 @@ def save_to_notion(notion_token, database_id, video_info, summary):
 
 def lambda_handler(event, context):
     try:
-        notion_token = os.environ["NOTION_TOKEN"]
+        notion_token = os.environ["NOTION_API_KEY"]
         database_id = os.environ["NOTION_DATABASE_ID"]
         gemini_api_key = os.environ["GEMINI_API_KEY"]
         youtube_api_key = os.environ["YOUTUBE_API_KEY"]

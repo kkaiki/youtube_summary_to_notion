@@ -122,15 +122,15 @@ def save_to_notion(notion_token, database_id, video_info, summary):
 
 def lambda_handler(event, context):
     try:
-        notion_token = os.environ.get("NOTION_TOKEN")
+        notion_token = os.environ.get("NOTION_API_KEY")
         database_id = os.environ.get("NOTION_DATABASE_ID")
         gemini_api_key = os.environ.get("GEMINI_API_KEY")
         youtube_api_key = os.environ.get("YOUTUBE_API_KEY")
 
         # APIキーの存在チェック
         if not notion_token:
-            print("[ERROR] NOTION_TOKEN is not set.")
-            return {"status": "error", "error": "NOTION_TOKEN is not set."}
+            print("[ERROR] NOTION_API_KEY is not set.")
+            return {"status": "error", "error": "NOTION_API_KEY is not set."}
         if not database_id:
             print("[ERROR] NOTION_DATABASE_ID is not set.")
             return {"status": "error", "error": "NOTION_DATABASE_ID is not set."}
