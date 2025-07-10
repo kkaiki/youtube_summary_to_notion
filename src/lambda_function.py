@@ -56,7 +56,11 @@ def get_video_info(video_id, api_key):
         return None, None, None
 
 def get_japanese_caption(video_id, max_retries=5, wait_seconds=60):
-    from youtube_transcript_api._errors import RequestBlocked, IPBlocked
+    try:
+        from youtube_transcript_api._errors import RequestBlocked, IPBlocked
+    except ImportError:
+        from youtube_transcript_api._errors import RequestBlocked
+        IPBlocked = RequestBlocked  # ダミーで同じものを使う
     retries = 0
     while retries < max_retries:
         try:

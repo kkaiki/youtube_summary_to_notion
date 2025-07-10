@@ -1,4 +1,4 @@
 requests
 notion-client
 google-generativeai
-youtube-transcript-api
+youtube-transcript-api>=0.6.2
