@@ -1,8 +1,3 @@
-google-api-python-client
+requests
 notion-client
-pytz
-youtube-transcript-api
-groq
-python-dotenv
-isodate
-pydantic
+google-generativeai
